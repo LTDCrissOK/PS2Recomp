@@ -414,6 +414,35 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
                                                    &sourceFbp,
                                                    &usedPreferredDisplaySource))
     {
+        static uint32_t s_missingFrameLogCount = 0u;
+        if (s_missingFrameLogCount < 16u || (s_missingFrameLogCount % 120u) == 0u)
+        {
+            const auto gsSnapshot = rt->gs().getDebugSnapshot();
+            std::cout << "[frame:missing] count=" << s_missingFrameLogCount
+                      << " tick=" << currentTick
+                      << " pmode=0x" << std::hex << gsSnapshot.pmode
+                      << " smode2=0x" << gsSnapshot.smode2
+                      << " dispfb1=0x" << gsSnapshot.dispfb1
+                      << " display1=0x" << gsSnapshot.display1
+                      << " dispfb2=0x" << gsSnapshot.dispfb2
+                      << " display2=0x" << gsSnapshot.display2
+                      << std::dec
+                      << " ctx0_fbp=" << gsSnapshot.ctx[0].frame.fbp
+                      << " ctx0_fbw=" << gsSnapshot.ctx[0].frame.fbw
+                      << " ctx0_psm=" << static_cast<uint32_t>(gsSnapshot.ctx[0].frame.psm)
+                      << " ctx1_fbp=" << gsSnapshot.ctx[1].frame.fbp
+                      << " ctx1_fbw=" << gsSnapshot.ctx[1].frame.fbw
+                      << " ctx1_psm=" << static_cast<uint32_t>(gsSnapshot.ctx[1].frame.psm)
+                      << " prim=" << static_cast<uint32_t>(gsSnapshot.prim.type)
+                      << " hasFrame=" << static_cast<uint32_t>(gsSnapshot.hasHostPresentationFrame ? 1u : 0u)
+                      << " latchedSize=" << gsSnapshot.hostPresentationWidth << "x" << gsSnapshot.hostPresentationHeight
+                      << " gifPackets=" << rt->gs().nativePackedGIFPacketCount()
+                      << " imageUploads=" << rt->gs().nativeImageUploadCount()
+                      << " transferPixels=" << gsSnapshot.transferCopiedPixels << "/" << gsSnapshot.transferTotalPixels
+                      << std::endl;
+        }
+        ++s_missingFrameLogCount;
+        s_reportedMissingFrame = true;
         Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, MAGENTA);
         UpdateTexture(tex, blank.data);
         UnloadImage(blank);
@@ -425,6 +454,16 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
         return;
     }
 
+    static bool s_reportedMissingFrame = false;
+    if (s_reportedMissingFrame)
+    {
+        std::cout << "[frame:recovered] tick=" << currentTick
+                  << " displayFbp=" << displayFbp
+                  << " sourceFbp=" << sourceFbp
+                  << " size=" << width << "x" << height
+                  << std::endl;
+        s_reportedMissingFrame = false;
+    }
     PS2_IF_AGRESSIVE_LOGS({
         static uint32_t s_uploadDebugCount = 0u;
         if (s_uploadDebugCount < 128u ||
