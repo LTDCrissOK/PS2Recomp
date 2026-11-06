@@ -5,6 +5,7 @@
 #include "../services/iop_rpc.h"
 
 #include <algorithm>
+#include <iostream>
 
 namespace ps2x::iop::detail
 {
@@ -56,6 +57,7 @@ namespace ps2x::iop::detail
             const std::string hostPath = m_host.translateGuestPath(guestPath);
             if (hostPath.empty())
             {
+                std::cerr << "[ioman] path translation failed guest=\"" << guestPath << "\"" << std::endl;
                 setV0(0xFFFFFFFFu);
                 return true;
             }
@@ -63,6 +65,8 @@ namespace ps2x::iop::detail
             const uint64_t handle = m_host.openHostFile(hostPath);
             if (handle == 0u)
             {
+                std::cerr << "[ioman] open failed guest=\"" << guestPath
+                          << "\" host=\"" << hostPath << "\"" << std::endl;
                 setV0(0xFFFFFFFFu);
                 return true;
             }
@@ -92,6 +96,10 @@ namespace ps2x::iop::detail
             }
 
             m_openFiles.emplace(fd, OpenFile{handle, 0u, size});
+            std::cerr << "[ioman] open ok fd=" << fd
+                      << " size=" << size
+                      << " guest=\"" << guestPath
+                      << "\" host=\"" << hostPath << "\"" << std::endl;
             setV0(static_cast<uint32_t>(fd));
             return true;
         }
@@ -137,6 +145,12 @@ namespace ps2x::iop::detail
                 bytesRead > buffer.size() ||
                 !m_memory.writeRam(destination, buffer.data(), bytesRead))
             {
+                std::cerr << "[ioman] read failed fd=" << fd
+                          << " offset=" << file->second.offset
+                          << " requested=" << requested
+                          << " bytesRead=" << bytesRead
+                          << " destination=0x" << std::hex << destination << std::dec
+                          << std::endl;
                 setV0(0xFFFFFFFFu);
                 return true;
             }
