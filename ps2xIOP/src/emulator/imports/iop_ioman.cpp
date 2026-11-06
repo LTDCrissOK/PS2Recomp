@@ -50,6 +50,9 @@ namespace ps2x::iop::detail
                 (mode & kAccessModeMask) != kReadOnly ||
                 (mode & (kCreate | kTruncate | kExclusive)) != 0u)
             {
+                std::cerr << "[ioman] open rejected path=\"" << guestPath
+                          << "\" mode=0x" << std::hex << mode << std::dec
+                          << " reason=unsupported-access-mode" << std::endl;
                 setV0(0xFFFFFFFFu);
                 return true;
             }
