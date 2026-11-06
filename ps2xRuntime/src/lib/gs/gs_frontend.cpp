@@ -230,6 +230,15 @@ GSDebugSnapshot GS::getDebugSnapshot() const
     GSDebugSnapshot snapshot{};
     snapshot.ctx[0] = m_ctx[0];
     snapshot.ctx[1] = m_ctx[1];
+    if (m_privRegs)
+    {
+        snapshot.pmode = m_privRegs->pmode;
+        snapshot.smode2 = m_privRegs->smode2;
+        snapshot.dispfb1 = m_privRegs->dispfb1;
+        snapshot.display1 = m_privRegs->display1;
+        snapshot.dispfb2 = m_privRegs->dispfb2;
+        snapshot.display2 = m_privRegs->display2;
+    }
     snapshot.prim = m_prim;
     snapshot.texa = m_texa;
     snapshot.texclut = m_texclut;
