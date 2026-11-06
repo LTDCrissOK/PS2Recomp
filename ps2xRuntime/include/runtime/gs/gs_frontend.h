@@ -13,6 +13,12 @@
 struct GSDebugSnapshot
 {
     GSContext ctx[2]{};
+    uint64_t pmode = 0;
+    uint64_t smode2 = 0;
+    uint64_t dispfb1 = 0;
+    uint64_t display1 = 0;
+    uint64_t dispfb2 = 0;
+    uint64_t display2 = 0;
     GSPrimReg prim{};
     GSTexaReg texa{};
     GSTexClutReg texclut{};
