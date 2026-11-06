@@ -10,6 +10,7 @@
 #include <cstring>
 #include <limits>
 #include <utility>
+#include <iostream>
 
 namespace
 {
@@ -158,7 +159,10 @@ int32_t PS2Vfs::open(std::string_view path, uint32_t flags, const PS2VfsMounts &
 {
     const ps2x::iop::ParsedPs2Path parsed = ps2x::iop::parsePs2Path(path);
     if (!parsed)
+    {
+        std::cerr << "[vfs] open rejected invalid PS2 path=\"" << path << "\"" << std::endl;
         return -1;
+    }
 
     std::unique_ptr<IPS2OpenFile> file;
     if (parsed.device == ps2x::iop::Ps2PathDevice::Rom0)
@@ -168,19 +172,31 @@ int32_t PS2Vfs::open(std::string_view path, uint32_t flags, const PS2VfsMounts &
             return -1;
         std::vector<uint8_t> bytes;
         if (!rom.readFile(parsed.path, bytes))
+        {
+            std::cerr << "[vfs] ROM file not found path=\"" << path << "\"" << std::endl;
             return -1;
+        }
         file = std::make_unique<MemoryOpenFile>(std::move(bytes));
     }
     else
     {
         std::filesystem::path hostPath;
         if (!resolveHostPath(path, mounts, hostPath))
+        {
+            std::cerr << "[vfs] path translation failed path=\"" << path
+                      << "\" cdRoot=\"" << mounts.cdRoot.string()
+                      << "\" hostRoot=\"" << mounts.hostRoot.string() << "\"" << std::endl;
             return -1;
+        }
 
         std::error_code existsError;
         const bool exists = std::filesystem::exists(hostPath, existsError);
         if (existsError || (exists && (flags & (PS2_FIO_O_CREAT | PS2_FIO_O_EXCL)) == (PS2_FIO_O_CREAT | PS2_FIO_O_EXCL)))
         {
+            std::cerr << "[vfs] open rejected path=\"" << path
+                      << "\" host=\"" << hostPath.string()
+                      << "\" existsError=" << existsError.message()
+                      << " exists=" << static_cast<uint32_t>(exists ? 1u : 0u) << std::endl;
             return -1;
         }
 
@@ -193,7 +209,13 @@ int32_t PS2Vfs::open(std::string_view path, uint32_t flags, const PS2VfsMounts &
             stream = std::fopen(hostPath.string().c_str(), "w+b");
         }
         if (!stream)
+        {
+            std::cerr << "[vfs] host open failed path=\"" << path
+                      << "\" host=\"" << hostPath.string()
+                      << "\" errno=" << errno
+                      << " error=\"" << std::strerror(errno) << "\"" << std::endl;
             return -1;
+        }
         file = std::make_unique<HostOpenFile>(stream);
     }
 
