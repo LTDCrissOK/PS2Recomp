@@ -383,6 +383,7 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
     static uint32_t s_lastWidth = 0u;
     static uint32_t s_lastHeight = 0u;
     static bool s_hasUploadedFrame = false;
+    static bool s_reportedMissingFrame = false;
     static std::vector<uint8_t> s_scratch;
     static std::vector<uint8_t> s_uploadBuffer(DEFAULT_FB_SIZE, 0u);
 
@@ -454,7 +455,6 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
         return;
     }
 
-    static bool s_reportedMissingFrame = false;
     if (s_reportedMissingFrame)
     {
         std::cout << "[frame:recovered] tick=" << currentTick
