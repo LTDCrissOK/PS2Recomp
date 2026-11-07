@@ -73,6 +73,9 @@ else()
 
     if(PS2X_IS_ANDROID)
         set(PLATFORM "Android" CACHE STRING "" FORCE)
+        # Raylib's Android preset defaults to GLES 2.0. Ask it to compile its
+        # GLES 3 API while our patched EGL bootstrap requests a 3.2 context.
+        set(OPENGL_VERSION "ES 3.0" CACHE STRING "Android OpenGL ES API level" FORCE)
     endif()
 
     FetchContent_Declare(
@@ -82,6 +85,65 @@ else()
         GIT_PROGRESS TRUE
     )
     FetchContent_MakeAvailable(raylib)
+
+    if(PS2X_IS_ANDROID)
+        # Raylib 5.5 hardcodes EGL_CONTEXT_CLIENT_VERSION=2 in its Android
+        # platform file. Request ES 3.2 first using EGL_KHR_create_context's
+        # minor-version attribute, then retry ES 3.0 for drivers that do not
+        # expose 3.2. The GS backend independently checks GL_VERSION at runtime.
+        set(PS2X_RAYLIB_ANDROID_EGL_SOURCE
+            "${raylib_SOURCE_DIR}/src/platforms/rcore_android.c")
+        if(NOT EXISTS "${PS2X_RAYLIB_ANDROID_EGL_SOURCE}")
+            message(FATAL_ERROR "Raylib Android platform source was not found: ${PS2X_RAYLIB_ANDROID_EGL_SOURCE}")
+        endif()
+
+        file(READ "${PS2X_RAYLIB_ANDROID_EGL_SOURCE}" PS2X_RAYLIB_ANDROID_SOURCE)
+        set(PS2X_RAYLIB_CONTEXT_OLD [=[
+    const EGLint contextAttribs[] =
+    {
+        EGL_CONTEXT_CLIENT_VERSION, 2,
+        EGL_NONE
+    };
+]=])
+        set(PS2X_RAYLIB_CONTEXT_NEW [=[
+    const EGLint contextAttribs32[] =
+    {
+        EGL_CONTEXT_CLIENT_VERSION, 3,
+        0x30FB, 2, // EGL_CONTEXT_MINOR_VERSION_KHR (request OpenGL ES 3.2)
+        EGL_NONE
+    };
+
+    const EGLint contextAttribs[] =
+    {
+        EGL_CONTEXT_CLIENT_VERSION, 3,
+        EGL_NONE
+    };
+]=])
+        string(FIND "${PS2X_RAYLIB_ANDROID_SOURCE}" "${PS2X_RAYLIB_CONTEXT_OLD}" PS2X_RAYLIB_CONTEXT_POSITION)
+        if(PS2X_RAYLIB_CONTEXT_POSITION EQUAL -1)
+            message(FATAL_ERROR "Raylib 5.5 Android EGL context block changed; refusing to silently build with GLES 2.")
+        endif()
+        string(REPLACE "${PS2X_RAYLIB_CONTEXT_OLD}" "${PS2X_RAYLIB_CONTEXT_NEW}"
+            PS2X_RAYLIB_ANDROID_SOURCE "${PS2X_RAYLIB_ANDROID_SOURCE}")
+
+        set(PS2X_RAYLIB_CREATE_CONTEXT_OLD
+            "platform.context = eglCreateContext(platform.device, platform.config, EGL_NO_CONTEXT, contextAttribs);")
+        set(PS2X_RAYLIB_CREATE_CONTEXT_NEW [=[
+    platform.context = eglCreateContext(platform.device, platform.config, EGL_NO_CONTEXT, contextAttribs32);
+    if (platform.context == EGL_NO_CONTEXT)
+    {
+        // Retry with the GLES 3.0 default context when EGL_KHR_create_context
+        // minor-version attributes are not accepted by the driver.
+        platform.context = eglCreateContext(platform.device, platform.config, EGL_NO_CONTEXT, contextAttribs);
+    }]=])
+        string(FIND "${PS2X_RAYLIB_ANDROID_SOURCE}" "${PS2X_RAYLIB_CREATE_CONTEXT_OLD}" PS2X_RAYLIB_CREATE_POSITION)
+        if(PS2X_RAYLIB_CREATE_POSITION EQUAL -1)
+            message(FATAL_ERROR "Raylib 5.5 Android EGL create call changed; refusing to build with an unverified context request.")
+        endif()
+        string(REPLACE "${PS2X_RAYLIB_CREATE_CONTEXT_OLD}" "${PS2X_RAYLIB_CREATE_CONTEXT_NEW}"
+            PS2X_RAYLIB_ANDROID_SOURCE "${PS2X_RAYLIB_ANDROID_SOURCE}")
+        file(WRITE "${PS2X_RAYLIB_ANDROID_EGL_SOURCE}" "${PS2X_RAYLIB_ANDROID_SOURCE}")
+    endif()
 
     if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_ANDROID)
         FetchContent_Declare(
