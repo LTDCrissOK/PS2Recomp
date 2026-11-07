@@ -398,7 +398,6 @@ add_library(ps2_runtime STATIC
     src/lib/vu/ps2_vu1_upper.cpp
     src/lib/vu/ps2_vu1_lower.cpp
     src/lib/games_database.cpp
-    src/lib/gs/gs_opengl_backend.cpp
 )
 
 if(PS2X_ENABLE_RUNTIME_LOGS)
