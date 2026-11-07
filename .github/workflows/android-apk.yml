@@ -1,0 +1,62 @@
+name: Android APK
+
+on:
+  push:
+    branches:
+      - feature/gs-opengles32-real
+    paths:
+      - 'android/**'
+      - 'ps2xRuntime/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - 'ps2xRuntime/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    name: Build Android arm64 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 cmake;3.22.1 ndk;28.2.13676358'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: PS2Recomp-Android-arm64
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
