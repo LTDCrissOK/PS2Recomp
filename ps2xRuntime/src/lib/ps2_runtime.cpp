@@ -13,11 +13,13 @@
 #include "ps2_host_backend.h"
 #include "ps2_iop_host.h"
 #include "ps2x/iop/iop_subsystem.h"
+#include "runtime/iso9660_reader.h"
 
 #include <iostream>
 #include <stdexcept>
 #include <fstream>
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -470,6 +472,39 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
             std::memcpy(s_uploadBuffer.data() + dstOffset, s_scratch.data() + srcOffset, copyRowBytes);
         }
     }
+
+    PS2_IF_AGRESSIVE_LOGS({
+        static uint32_t s_frameStatsLogCount = 0u;
+        if (s_frameStatsLogCount < 8u || (s_frameStatsLogCount % 30u) == 0u)
+        {
+            uint64_t nonBlackPixels = 0u;
+            uint64_t rgbSum = 0u;
+            uint64_t hash = 14695981039346656037ull;
+            for (size_t i = 0u; i + 3u < s_uploadBuffer.size(); i += 4u)
+            {
+                const uint8_t r = s_uploadBuffer[i + 0u];
+                const uint8_t g = s_uploadBuffer[i + 1u];
+                const uint8_t b = s_uploadBuffer[i + 2u];
+                if (r != 0u || g != 0u || b != 0u)
+                    ++nonBlackPixels;
+                rgbSum += static_cast<uint64_t>(r) + static_cast<uint64_t>(g) + static_cast<uint64_t>(b);
+                for (size_t channel = 0u; channel < 4u; ++channel)
+                {
+                    hash ^= s_uploadBuffer[i + channel];
+                    hash *= 1099511628211ull;
+                }
+            }
+            std::cout << "[frame:stats] idx=" << s_frameStatsLogCount
+                      << " tick=" << currentTick
+                      << " nonBlackPixels=" << nonBlackPixels
+                      << " rgbSum=" << rgbSum
+                      << " fnv1a64=0x" << std::hex << hash << std::dec
+                      << " imageUploads=" << rt->gs().nativeImageUploadCount()
+                      << " gifPackets=" << rt->gs().nativePackedGIFPacketCount()
+                      << std::endl;
+        }
+        ++s_frameStatsLogCount;
+    });
 
     UpdateTexture(tex, s_uploadBuffer.data());
     outWidth = width;
@@ -1066,6 +1101,186 @@ void PS2Runtime::configureIoPathsFromElf(const std::string &elfPath)
     }
 
     setIoPaths(paths);
+}
+
+bool PS2Runtime::mountCdIsoImage(const std::filesystem::path &isoPath,
+                                 std::string_view bootElfName,
+                                 std::string *error)
+{
+    const auto fail = [error](const std::string &message)
+    {
+        if (error)
+            *error = message;
+        return false;
+    };
+
+    if (isoPath.empty() || bootElfName.empty())
+        return fail("ISO path and expected PS2 boot ELF name are required");
+
+    auto image = std::make_shared<ps2x::iso9660::Image>();
+    std::string imageError;
+    const std::filesystem::path normalizedIsoPath = normalizeAbsolutePath(isoPath);
+    if (normalizedIsoPath.empty() || !image->open(normalizedIsoPath, &imageError))
+        return fail(imageError.empty() ? "Unable to open the selected ISO image" : imageError);
+
+    ps2x::iso9660::DirectoryEntry bootEntry;
+    if (!image->findFile(bootElfName, bootEntry) &&
+        !image->findFileRecursive(bootElfName, bootEntry))
+    {
+        return fail("The ISO does not contain the expected boot ELF: " + std::string(bootElfName));
+    }
+    if (bootEntry.isDirectory() || bootEntry.size < 52u)
+        return fail("The selected boot entry is not a valid-sized PS2 ELF file");
+
+    std::array<uint8_t, 52u> elfHeader{};
+    size_t headerBytesRead = 0u;
+    if (!image->readFile(bootEntry, 0u, elfHeader.data(), elfHeader.size(), &headerBytesRead) ||
+        headerBytesRead != elfHeader.size())
+    {
+        return fail("Unable to read the PS2 boot ELF header from the ISO");
+    }
+
+    if (elfHeader[0] != 0x7Fu || elfHeader[1] != 'E' ||
+        elfHeader[2] != 'L' || elfHeader[3] != 'F')
+    {
+        return fail("The selected boot file does not have an ELF signature");
+    }
+    if (elfHeader[4] != 1u || elfHeader[5] != 1u || elfHeader[6] != 1u)
+        return fail("The selected boot ELF is not a 32-bit little-endian ELF file");
+    if (elfHeader[18] != 8u || elfHeader[19] != 0u)
+        return fail("The selected boot ELF is not for the MIPS architecture");
+
+    ps2x::iso9660::DirectoryEntry systemCnfEntry;
+    if (!image->findFile("SYSTEM.CNF", systemCnfEntry) &&
+        !image->findFileRecursive("SYSTEM.CNF", systemCnfEntry))
+    {
+        return fail("SYSTEM.CNF was not found in the selected ISO");
+    }
+
+    std::vector<uint8_t> systemCnfBytes;
+    if (!image->readFileFully(systemCnfEntry, systemCnfBytes))
+        return fail("Unable to read SYSTEM.CNF from the selected ISO");
+
+    std::string systemCnf(systemCnfBytes.begin(), systemCnfBytes.end());
+    std::transform(systemCnf.begin(), systemCnf.end(), systemCnf.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    std::string expectedBootName(bootElfName);
+    const size_t versionSuffix = expectedBootName.find(';');
+    if (versionSuffix != std::string::npos)
+        expectedBootName.erase(versionSuffix);
+    std::transform(expectedBootName.begin(), expectedBootName.end(), expectedBootName.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+
+    if (systemCnf.find("BOOT2") == std::string::npos ||
+        systemCnf.find(expectedBootName) == std::string::npos)
+    {
+        return fail("SYSTEM.CNF does not reference the expected boot ELF " + expectedBootName);
+    }
+
+    IoPaths paths = runtimeIoPaths();
+    paths.cdImage = normalizedIsoPath;
+    paths.cdIsoImage = std::move(image);
+    setIoPaths(paths);
+
+    if (error)
+        error->clear();
+    std::cout << "[ISO9660] Mounted " << normalizedIsoPath.string()
+              << " | boot=" << bootEntry.name
+              << " | LBA=" << bootEntry.extentLba
+              << " | size=" << bootEntry.size << std::endl;
+    return true;
+}
+
+bool PS2Runtime::extractMountedCdIsoBootElf(std::string_view bootElfName,
+                                            const std::filesystem::path &destinationPath,
+                                            std::string *error)
+{
+    const auto fail = [error](const std::string &message)
+    {
+        if (error)
+            *error = message;
+        return false;
+    };
+
+    const IoPaths &paths = runtimeIoPaths();
+    if (!paths.cdIsoImage || !paths.cdIsoImage->isOpen())
+        return fail("No CD-ROM ISO image is mounted");
+    if (destinationPath.empty())
+        return fail("Boot ELF destination path is empty");
+
+    const std::filesystem::path normalizedDestination = normalizeAbsolutePath(destinationPath);
+    if (normalizedDestination.empty() || normalizedDestination == paths.cdImage)
+        return fail("Boot ELF destination must be a writable file separate from the ISO image");
+
+    ps2x::iso9660::DirectoryEntry bootEntry;
+    if (!paths.cdIsoImage->findFile(bootElfName, bootEntry) &&
+        !paths.cdIsoImage->findFileRecursive(bootElfName, bootEntry))
+    {
+        return fail("Mounted ISO no longer contains the expected boot ELF");
+    }
+
+    std::vector<uint8_t> elfBytes;
+    if (!paths.cdIsoImage->readFileFully(bootEntry, elfBytes) || elfBytes.size() < 52u)
+        return fail("Unable to extract the complete boot ELF from the mounted ISO");
+
+    if (elfBytes[0] != 0x7Fu || elfBytes[1] != 'E' ||
+        elfBytes[2] != 'L' || elfBytes[3] != 'F' ||
+        elfBytes[4] != 1u || elfBytes[5] != 1u ||
+        elfBytes[18] != 8u || elfBytes[19] != 0u)
+    {
+        return fail("Extracted boot file failed the PS2 ELF header check");
+    }
+
+    std::error_code filesystemError;
+    const std::filesystem::path parent = normalizedDestination.parent_path();
+    if (!parent.empty())
+    {
+        std::filesystem::create_directories(parent, filesystemError);
+        if (filesystemError)
+            return fail("Unable to create the boot ELF output directory: " + filesystemError.message());
+    }
+
+    std::filesystem::path temporaryPath = normalizedDestination;
+    temporaryPath += ".tmp";
+    {
+        std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+        if (!output)
+            return fail("Unable to create the extracted boot ELF file");
+        output.write(reinterpret_cast<const char *>(elfBytes.data()),
+                     static_cast<std::streamsize>(elfBytes.size()));
+        output.flush();
+        if (!output.good())
+        {
+            output.close();
+            std::filesystem::remove(temporaryPath, filesystemError);
+            return fail("Failed while writing the extracted boot ELF");
+        }
+    }
+
+    std::filesystem::rename(temporaryPath, normalizedDestination, filesystemError);
+    if (filesystemError)
+    {
+        filesystemError.clear();
+        std::filesystem::remove(normalizedDestination, filesystemError);
+        if (filesystemError)
+        {
+            std::filesystem::remove(temporaryPath, filesystemError);
+            return fail("Unable to replace the previous boot ELF file");
+        }
+        std::filesystem::rename(temporaryPath, normalizedDestination, filesystemError);
+    }
+    if (filesystemError)
+    {
+        std::filesystem::remove(temporaryPath, filesystemError);
+        return fail("Unable to finalize the extracted boot ELF file");
+    }
+
+    if (error)
+        error->clear();
+    std::cout << "[ISO9660] Extracted boot ELF " << bootEntry.name
+              << " -> " << normalizedDestination.string()
+              << " (" << elfBytes.size() << " bytes)" << std::endl;
+    return true;
 }
 
 namespace
