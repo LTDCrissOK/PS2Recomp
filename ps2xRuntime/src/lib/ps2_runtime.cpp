@@ -5,6 +5,9 @@
 #include "game_overrides.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/gs/gs_frontend.h"
+#if defined(__ANDROID__)
+#include "runtime/gs/gs_opengl_backend.h"
+#endif
 #include "runtime/ee_scheduler.h"
 #include "ThreadNaming.h"
 #include "Kernel/Stubs/Audio.h"
@@ -735,6 +738,12 @@ bool PS2Runtime::initialize(const char *title)
         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
         InitAudioDevice();
         m_audioBackend.setAudioReady(IsAudioDeviceReady());
+#endif
+#if defined(__ANDROID__)
+        // The EGL context only exists after InitWindow(). Install the Android
+        // GS backend here; it queries the active context and retains the CPU
+        // reference implementation for GS correctness/fallback.
+        m_gs.setRasterBackend(std::make_unique<GSOpenGLBackend>());
 #endif
         SetTargetFPS(60);
         if (m_debugUiInitCallback)
