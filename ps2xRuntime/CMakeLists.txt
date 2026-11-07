@@ -87,6 +87,21 @@ else()
     FetchContent_MakeAvailable(raylib)
 
     if(PS2X_IS_ANDROID)
+        # Raylib 5.5 incorrectly calls the EXT entry point while compiling
+        # its GLES 3 backend. GLES 3 exposes glDrawBuffers as a core symbol.
+        set(PS2X_RAYLIB_RLGL_HEADER "${raylib_SOURCE_DIR}/src/rlgl.h")
+        file(READ "${PS2X_RAYLIB_RLGL_HEADER}" PS2X_RAYLIB_RLGL_SOURCE)
+        set(PS2X_RAYLIB_DRAW_BUFFERS_OLD "glDrawBuffersEXT(count, buffers);")
+        string(FIND "${PS2X_RAYLIB_RLGL_SOURCE}" "${PS2X_RAYLIB_DRAW_BUFFERS_OLD}" PS2X_RAYLIB_DRAW_BUFFERS_POSITION)
+        if(PS2X_RAYLIB_DRAW_BUFFERS_POSITION EQUAL -1)
+            message(FATAL_ERROR "Raylib 5.5 rlgl.h no longer contains the expected GLES draw-buffers call; review the Android GLES patch.")
+        endif()
+        string(REPLACE "${PS2X_RAYLIB_DRAW_BUFFERS_OLD}" "glDrawBuffers(count, buffers);"
+            PS2X_RAYLIB_RLGL_SOURCE "${PS2X_RAYLIB_RLGL_SOURCE}")
+        file(WRITE "${PS2X_RAYLIB_RLGL_HEADER}" "${PS2X_RAYLIB_RLGL_SOURCE}")
+    endif()
+
+    if(PS2X_IS_ANDROID)
         # Raylib 5.5 hardcodes EGL_CONTEXT_CLIENT_VERSION=2 in its Android
         # platform file. Request ES 3.2 first using EGL_KHR_create_context's
         # minor-version attribute, then retry ES 3.0 for drivers that do not
