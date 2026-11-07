@@ -61,6 +61,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: PS2Recomp-Android-arm64
-          path: app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
