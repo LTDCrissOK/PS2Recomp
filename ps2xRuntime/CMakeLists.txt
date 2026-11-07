@@ -238,8 +238,12 @@ else()
     target_link_libraries(ps2_host_backend INTERFACE raylib)
 
     if(PS2X_IS_ANDROID)
-        target_link_libraries(ps2_host_backend INTERFACE log android)
-    endif()
+    target_link_libraries(ps2_host_backend INTERFACE
+        log
+        android
+        EGL
+        GLESv3
+    )
 endif()
 
 if(PS2X_IS_ANDROID)
@@ -394,6 +398,7 @@ add_library(ps2_runtime STATIC
     src/lib/vu/ps2_vu1_upper.cpp
     src/lib/vu/ps2_vu1_lower.cpp
     src/lib/games_database.cpp
+    src/lib/gs/gs_opengl_backend.cpp
 )
 
 if(PS2X_ENABLE_RUNTIME_LOGS)
