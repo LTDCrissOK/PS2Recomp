@@ -2,14 +2,26 @@
 
 ## Requirements
 
-- Android Studio (recommended) or a local Gradle 8.7+ / JDK 17 install
-- Android SDK 34 + NDK (installed automatically by Android Studio on first sync)
-- CMake 3.22.1 from the SDK (Android Studio installs it on demand)
+- Android Studio or Gradle 8.9 / JDK 17
+- Android SDK 34, NDK 28.2.13676358 and CMake 3.22.1
 
-## Building
+## Android launcher
 
-Option A — Android Studio: open the `android/` folder and run the `app` configuration.
-Option B — command line (no wrapper is committed; generate it once):
+The app opens a Java launcher first. Use **SELECCIONAR ELF RECOMPILADO** to choose a local ELF through Android's Storage Access Framework. The launcher validates the ELF magic header and copies it to:
+
+`Android/data/com.ps2x.runner/files/game.elf`
+
+Then choose **INICIAR JUEGO** to open the native runtime. The native runtime is configured to load that exact path.
+
+No broad storage permission is needed: the Android document picker grants access to the selected file.
+
+## ISO limitation
+
+PS2Recomp is a static recompilation runtime, not a PS2 emulator. This Android build does **not** load or convert PS2 ISO images. The ISO information button in the launcher explains this limitation; an ISO-to-recompiled-game pipeline has not been implemented.
+
+## Build
+
+Open the `android/` folder in Android Studio, or run:
 
 ```sh
 cd android
@@ -19,18 +31,8 @@ gradle wrapper --gradle-version 8.9
 
 APK output: `android/app/build/outputs/apk/release/app-release.apk`.
 
-## Running a game
+## Runtime notes
 
-Since there is no argv on Android, the guest ELF path comes from
-`PS2X_DEFAULT_BOOT_ELF`, set via the `ps2xBootElf` Gradle property
-(`android/gradle.properties`, or `-Pps2xBootElf=...` on the command line).
+The Android runtime uses the configured default ELF path because NativeActivity does not provide command-line arguments. If the selected ELF is not a compatible PS2Recomp runtime input, the native runtime can still fail to load it.
 
-
-```sh
-adb install app/build/outputs/apk/release/app-release.apk
-adb shell mkdir -p /storage/emulated/0/Android/data/com.ps2x.runner/files
-adb push "path/to/game/." /storage/emulated/0/Android/data/com.ps2x.runner/files/
-```
-
-Logs: raylib output goes to logcat (`adb logcat -s raylib`); runtime `std::cout`/`cerr`
-output is not redirected to logcat yet.
+Logs are written to logcat with tag `ps2x`.
