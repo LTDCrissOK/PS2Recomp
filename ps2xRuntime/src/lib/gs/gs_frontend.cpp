@@ -117,7 +117,16 @@ void GS::init(uint8_t *vram, uint32_t vramSize, GSRegisters *privRegs)
     m_localMemorySize = vramSize;
     m_privRegs = privRegs;
     if (!m_backend)
-        m_backend = std::make_unique<GSCpuBackend>();
+    {
+#if defined(__ANDROID__) && defined(PS2X_USE_ANDROID_GSDX_GLES30)
+        // The Android host supplies the GLES 3.0 GS backend factory at final link.
+        // Keep the CPU backend as a safe fallback when the host has no factory.
+        extern std::unique_ptr<GSRasterBackend> CreateAndroidGSRasterBackend();
+        m_backend = CreateAndroidGSRasterBackend();
+#endif
+        if (!m_backend)
+            m_backend = std::make_unique<GSCpuBackend>();
+    }
     m_backend->Initialize(vram, vramSize);
     reset();
 }
