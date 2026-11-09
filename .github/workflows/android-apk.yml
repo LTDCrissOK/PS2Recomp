@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/gs-opengles32-real
+      - feature/gs-vulkan-android
     paths:
       - 'android/**'
       - 'ps2xRuntime/**'
