@@ -281,12 +281,11 @@ void GSVulkanBackend::Initialize(uint8_t *vram, uint32_t vramSize)
 {
     m_cpu.Initialize(vram, vramSize);
 #if defined(__ANDROID__)
-    m_vulkanReady = InitializeVulkan();
-    if (!m_vulkanReady)
-    {
-        std::cerr << "[GSVulkanBackend] Vulkan unavailable; retaining CPU GS backend" << std::endl;
-        ShutdownVulkan();
-    }
+    // GS rasterization remains on the existing CPU backend for this integration
+    // stage. AndroidVulkanPresenter owns the NativeActivity surface and presents
+    // these completed GS frames through a real Vulkan swapchain.
+    m_vulkanReady = false;
+    ShutdownVulkan();
 #else
     m_vulkanReady = false;
 #endif
@@ -322,15 +321,9 @@ void GSVulkanBackend::Sync(GSSyncReason reason) { m_cpu.Sync(reason); }
 
 PresentationFrame GSVulkanBackend::Present(const GSPresentationRequest &request)
 {
-    PresentationFrame frame = m_cpu.Present(request);
-#if defined(__ANDROID__)
-    if (m_vulkanReady && frame && !RoundTripFrame(frame))
-    {
-        std::cerr << "[GSVulkanBackend] Vulkan frame transfer failed; using CPU frame" << std::endl;
-        ShutdownVulkan();
-    }
-#endif
-    return frame;
+    // The CPU GS produces the guest framebuffer. The Android runtime consumes
+    // that framebuffer and submits it to the Vulkan swapchain for presentation.
+    return m_cpu.Present(request);
 }
 
 bool GSVulkanBackend::ClearFramebuffer(const GSContext &context, uint32_t rgba) { return m_cpu.ClearFramebuffer(context, rgba); }
