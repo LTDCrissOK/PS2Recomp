@@ -4,6 +4,39 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <android_native_app_glue.h>
+
+extern "C" android_app *GetAndroidApp(void);
+
+bool AndroidVulkanPresenter::InitializeFromActivity()
+{
+    m_app = GetAndroidApp();
+    if (!m_app) { std::cerr << "[AndroidVulkanPresenter] NativeActivity is unavailable" << std::endl; return false; }
+    while (!m_app->window && !m_app->destroyRequested)
+    {
+        int events = 0;
+        android_poll_source *source = nullptr;
+        const int ident = ALooper_pollOnce(-1, nullptr, &events, reinterpret_cast<void **>(&source));
+        if (source) source->process(m_app, source);
+        if (ident == ALOOPER_POLL_ERROR) return false;
+    }
+    if (m_app->destroyRequested || !m_app->window) return false;
+    return Initialize(m_app->window);
+}
+
+bool AndroidVulkanPresenter::PollEvents()
+{
+    if (!m_app || m_app->destroyRequested) return false;
+    int events = 0;
+    android_poll_source *source = nullptr;
+    int ident = 0;
+    while ((ident = ALooper_pollOnce(0, nullptr, &events, reinterpret_cast<void **>(&source))) > ALOOPER_POLL_TIMEOUT)
+    {
+        if (source) source->process(m_app, source);
+    }
+    return !m_app->destroyRequested;
+}
+
 
 namespace
 {
