@@ -14,6 +14,8 @@ public:
     AndroidVulkanPresenter &operator=(const AndroidVulkanPresenter &) = delete;
 
     bool Initialize(ANativeWindow *window);
+    bool InitializeFromActivity();
+    bool PollEvents();
     bool Present(const std::vector<uint8_t> &rgba, uint32_t width, uint32_t height);
     void Shutdown();
     uint32_t Width() const { return m_extent.width; }
@@ -24,6 +26,7 @@ private:
     bool CreateStagingBuffer();
     uint32_t FindMemoryType(uint32_t bits, VkMemoryPropertyFlags flags) const;
 
+    struct android_app *m_app = nullptr;
     ANativeWindow *m_window = nullptr;
     VkInstance m_instance = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
