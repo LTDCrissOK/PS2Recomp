@@ -5,6 +5,9 @@
 #include "game_overrides.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/gs/gs_frontend.h"
+#if defined(__ANDROID__)
+#include "runtime/gs/android_vulkan_presenter.h"
+#endif
 #include "runtime/ee_scheduler.h"
 #include "ThreadNaming.h"
 #include "Kernel/Stubs/Audio.h"
@@ -477,6 +480,21 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
     s_hasUploadedFrame = true;
 }
 
+
+#if defined(__ANDROID__)
+static bool CaptureVulkanFrame(PS2Runtime *runtime, std::vector<uint8_t> &pixels, uint32_t &width, uint32_t &height)
+{
+    static uint64_t lastTick = std::numeric_limits<uint64_t>::max();
+    const uint64_t tick = runtime->eeScheduler().currentVSyncTick();
+    if (tick != lastTick)
+    {
+        runtime->gs().latchHostPresentationFrame();
+        lastTick = tick;
+    }
+    return runtime->gs().copyLatchedHostPresentationFrame(pixels, width, height);
+}
+#endif
+
 PS2Runtime::PS2Runtime()
 {
     m_iopHost = std::make_unique<PS2IopHostAdapter>(*this);
@@ -728,15 +746,21 @@ bool PS2Runtime::initialize(const char *title)
             std::cerr << "Failed to bind runtime core subsystems" << std::endl;
             return false;
         }
-#if defined(PLATFORM_VITA)
+#if defined(__ANDROID__)
+        // Android owns a NativeActivity window. Vulkan presents directly to its
+        // ANativeWindow; creating Raylib's EGL surface here would compete for it.
+        (void)title;
+        m_audioBackend.setAudioReady(false);
+#elif defined(PLATFORM_VITA)
         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title); // raylib vita does not support audio
+        SetTargetFPS(60);
 #else
         SetConfigFlags(FLAG_WINDOW_RESIZABLE);
         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
         InitAudioDevice();
         m_audioBackend.setAudioReady(IsAudioDeviceReady());
-#endif
         SetTargetFPS(60);
+#endif
         if (m_debugUiInitCallback)
         {
             m_debugUiInitCallback(*this, m_debugUiUserData);
@@ -2357,10 +2381,20 @@ void PS2Runtime::run()
 
     RUNTIME_LOG("Starting execution at address 0x" << std::hex << m_cpuContext.pc << std::dec);
 
+#if defined(__ANDROID__)
+    AndroidVulkanPresenter vulkanPresenter;
+    if (!vulkanPresenter.InitializeFromActivity())
+    {
+        std::cerr << "[run] failed to initialize Vulkan Android presentation" << std::endl;
+        requestStop();
+        return;
+    }
+#else
     // A blank image to use as a framebuffer
     Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, BLANK);
     Texture2D frameTex = LoadTextureFromImage(blank);
     UnloadImage(blank);
+#endif
 
     std::atomic<bool> gameThreadFinished{false};
 
@@ -2420,6 +2454,36 @@ void PS2Runtime::run()
 
             }
         });
+#if defined(__ANDROID__)
+        if (!vulkanPresenter.PollEvents())
+        {
+            requestStop();
+            break;
+        }
+        std::vector<uint8_t> framePixels;
+        uint32_t presentWidth = 0u;
+        uint32_t presentHeight = 0u;
+        if (CaptureVulkanFrame(this, framePixels, presentWidth, presentHeight))
+        {
+            if (!vulkanPresenter.Present(framePixels, presentWidth, presentHeight))
+            {
+                std::cerr << "[run] Vulkan frame presentation failed" << std::endl;
+                requestStop();
+                break;
+            }
+        }
+        else
+        {
+            static const std::vector<uint8_t> blankFrame(static_cast<size_t>(FB_WIDTH) * DEFAULT_DISPLAY_HEIGHT * 4u, 0u);
+            if (!vulkanPresenter.Present(blankFrame, FB_WIDTH, DEFAULT_DISPLAY_HEIGHT))
+            {
+                std::cerr << "[run] Vulkan blank-frame presentation failed" << std::endl;
+                requestStop();
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+#else
         uint32_t presentWidth = FB_WIDTH;
         uint32_t presentHeight = DEFAULT_DISPLAY_HEIGHT;
         UploadFrame(frameTex, this, presentWidth, presentHeight);
@@ -2452,6 +2516,7 @@ void PS2Runtime::run()
             requestStop();
             break;
         }
+#endif
     }
 
     requestStop();
@@ -2465,8 +2530,12 @@ void PS2Runtime::run()
         m_debugUiShutdownCallback(*this, m_debugUiUserData);
         m_debugUiInitialized = false;
     }
+#if defined(__ANDROID__)
+    vulkanPresenter.Shutdown();
+#else
     UnloadTexture(frameTex);
     CloseWindow();
+#endif
 
     RUNTIME_LOG("[run] exiting loop");
 }
