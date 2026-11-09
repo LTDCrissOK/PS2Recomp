@@ -391,6 +391,7 @@ add_library(ps2_runtime STATIC
     src/lib/gs/gs_frontend.cpp
     src/lib/gs/gs_cpu_backend.cpp
     src/lib/gs/gs_vulkan_backend.cpp
+    src/lib/gs/android_vulkan_presenter.cpp
     src/lib/ps2_iop_host.cpp
     src/lib/ps2_memory.cpp
     src/lib/ps2_pad.cpp
@@ -513,6 +514,12 @@ target_include_directories(ps2_runtime PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lib/Kernel
 )
+
+if(ANDROID)
+    target_include_directories(ps2_runtime PRIVATE
+        "${CMAKE_ANDROID_NDK}/sources/android/native_app_glue"
+    )
+endif()
 
 target_link_libraries(ps2_runtime PUBLIC ps2_host_backend ffmpeg ps2_iop)
 target_link_libraries(ps2EntryRunner
