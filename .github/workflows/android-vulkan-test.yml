@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ feature/gs-vulkan-android ]
-    paths:
-      - 'android-vulkan-test/**'
-      - '.github/workflows/android-vulkan-test.yml'
 
 jobs:
   build:
@@ -29,8 +26,6 @@ jobs:
             SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -n1)"
           fi
           test -x "$SDKMANAGER"
-          # sdkmanager closes stdin after accepting licenses; avoid treating yes's
-          # expected SIGPIPE as a fatal pipeline error while preserving sdkmanager's status.
           set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
           set -o pipefail
