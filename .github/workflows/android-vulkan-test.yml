@@ -29,7 +29,11 @@ jobs:
             SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -n1)"
           fi
           test -x "$SDKMANAGER"
+          # sdkmanager closes stdin after accepting licenses; avoid treating yes's
+          # expected SIGPIPE as a fatal pipeline error while preserving sdkmanager's status.
+          set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
       - name: Build ARM64 and ARM32 Vulkan test APK
         run: gradle -p android-vulkan-test assembleDebug --stacktrace
