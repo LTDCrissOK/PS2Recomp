@@ -36,9 +36,10 @@ private:
 #if defined(__ANDROID__)
     bool InitializeVulkan();
     bool RoundTripFrame(PresentationFrame &frame);
-    void ShutdownVulkan();
     uint32_t FindMemoryType(uint32_t typeBits, VkMemoryPropertyFlags properties) const;
 #endif
+
+    void ShutdownVulkan();
 
     GSCpuBackend m_cpu;
     bool m_vulkanReady = false;
