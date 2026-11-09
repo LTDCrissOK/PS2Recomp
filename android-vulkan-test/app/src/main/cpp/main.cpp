@@ -1,6 +1,9 @@
+#define VK_USE_PLATFORM_ANDROID_KHR
 #include <android/log.h>
+#include <android/native_window.h>
 #include <android_native_app_glue.h>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
 #include <algorithm>
 #include <array>
 #include <cstdint>
