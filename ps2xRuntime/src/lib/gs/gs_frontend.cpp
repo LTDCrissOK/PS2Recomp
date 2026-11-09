@@ -1,5 +1,8 @@
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/gs/gs_cpu_backend.h"
+#if defined(__ANDROID__)
+#include "runtime/gs/gs_vulkan_backend.h"
+#endif
 #include "ps2_log.h"
 #include "runtime/ps2_memory.h"
 #include <atomic>
@@ -106,7 +109,11 @@ namespace
 
 
 GS::GS()
+#if defined(__ANDROID__)
+    : m_backend(std::make_unique<GSVulkanBackend>())
+#else
     : m_backend(std::make_unique<GSCpuBackend>())
+#endif
 {
     reset();
 }
