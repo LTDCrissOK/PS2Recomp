@@ -1,4 +1,7 @@
 #include "ps2_runtime.h"
+#if defined(__ANDROID__)
+#include "runtime/ps2_android_runtime.h"
+#endif
 #include "ps2_log.h"
 #include "ps2_stubs.h"
 #include "ps2_syscalls.h"
@@ -2757,6 +2760,9 @@ void PS2Runtime::run()
             writePersistentDiagnostic(diagnostic.str());
         }
 
+#if defined(__ANDROID__)
+        ps2AndroidUpdateTouchState();
+#endif
         BeginDrawing();
         ClearBackground(BLACK);
         const float srcWidth = static_cast<float>(std::max<uint32_t>(1u, presentWidth));
@@ -2773,6 +2779,9 @@ void PS2Runtime::run()
             dstWidth,
             dstHeight};
         DrawTexturePro(frameTex, srcRect, dstRect, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+#if defined(__ANDROID__)
+        ps2AndroidDrawTouchControls();
+#endif
         if (m_debugUiInitialized && m_debugUiDrawCallback)
         {
             m_debugUiDrawCallback(*this, m_debugUiUserData);
