@@ -14,6 +14,14 @@
 #include <limits>
 #include <utility>
 
+#if defined(__ANDROID__)
+namespace manhunt2::android
+{
+    uint64_t selectedIsoSize() noexcept;
+    bool readSelectedIsoAt(uint64_t offset, void *destination, size_t size) noexcept;
+}
+#endif
+
 #if !defined(_WIN32)
 #include <sys/types.h>
 #endif
@@ -275,6 +283,12 @@ std::string PS2IopHostAdapter::hostPath(ps2x::iop::HostPathKind kind) const
     case ps2x::iop::HostPathKind::CdRoot:
         return paths.cdRoot.string();
     case ps2x::iop::HostPathKind::CdImage:
+#if defined(__ANDROID__)
+        // The SAF-selected ISO is exposed as a virtual host file. IopCdvd
+        // consumes it through the same random-access IopHost API as desktop images.
+        if (manhunt2::android::selectedIsoSize() != 0u)
+            return "android://selected-iso";
+#endif
         return paths.cdImage.string();
     case ps2x::iop::HostPathKind::HostRoot:
         return paths.hostRoot.string();
@@ -302,6 +316,22 @@ uint64_t PS2IopHostAdapter::openHostFile(std::string_view path)
     {
         return 0u;
     }
+
+#if defined(__ANDROID__)
+    if (path == "android://selected-iso")
+    {
+        const uint64_t size = manhunt2::android::selectedIsoSize();
+        if (size == 0u)
+            return 0u;
+
+        std::lock_guard<std::mutex> lock(m_hostFileMutex);
+        uint64_t handle = m_nextHostFileHandle++;
+        if (handle == 0u)
+            handle = m_nextHostFileHandle++;
+        m_hostFiles.emplace(handle, HostFile{nullptr, size, true});
+        return handle;
+    }
+#endif
 
     const std::filesystem::path hostPath{std::string(path)};
 #if defined(_WIN32)
@@ -337,7 +367,8 @@ bool PS2IopHostAdapter::hostFileSize(uint64_t handle, uint64_t &size) const
     size = 0u;
     std::lock_guard<std::mutex> lock(m_hostFileMutex);
     const auto it = m_hostFiles.find(handle);
-    if (it == m_hostFiles.end() || !it->second.stream)
+    if (it == m_hostFiles.end() ||
+        (!it->second.androidIso && !it->second.stream))
     {
         return false;
     }
@@ -359,10 +390,25 @@ bool PS2IopHostAdapter::readHostFile(uint64_t handle,
 
     std::lock_guard<std::mutex> lock(m_hostFileMutex);
     const auto it = m_hostFiles.find(handle);
-    if (it == m_hostFiles.end() || !it->second.stream)
+    if (it == m_hostFiles.end())
     {
         return false;
     }
+
+#if defined(__ANDROID__)
+    if (it->second.androidIso)
+    {
+        if (offset > it->second.size || size > it->second.size - offset)
+            return false;
+        if (!manhunt2::android::readSelectedIsoAt(offset, destination, size))
+            return false;
+        bytesRead = size;
+        return true;
+    }
+#endif
+
+    if (!it->second.stream)
+        return false;
 
 #if defined(_WIN32)
     if (offset > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
