@@ -101,6 +101,7 @@ private:
     {
         std::FILE *stream = nullptr;
         uint64_t size = 0u;
+        bool androidIso = false;
     };
     mutable std::mutex m_hostFileMutex;
     std::unordered_map<uint64_t, HostFile> m_hostFiles;
