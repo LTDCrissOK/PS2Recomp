@@ -1,5 +1,8 @@
 #include "runtime/ps2_pad.h"
 #include "ps2_host_backend.h"
+#if defined(__ANDROID__)
+#include "runtime/ps2_android_runtime.h"
+#endif
 #include <cstring>
 
 namespace
@@ -118,6 +121,10 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
         if (IsKeyDown(KEY_TAB))
             clearBit(PAD_SELECT);
     }
+
+#if defined(__ANDROID__)
+    btns &= static_cast<uint16_t>(~ps2AndroidTouchButtons());
+#endif
 
     data[2] = static_cast<uint8_t>(btns & 0xFF);
     data[3] = static_cast<uint8_t>(btns >> 8);
