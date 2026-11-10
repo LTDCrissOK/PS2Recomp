@@ -149,15 +149,15 @@ void ps2AndroidDrawTouchControls()
 
     DrawCircle(static_cast<int>(dpadX), static_cast<int>(dpadY),
                dpadRadius, Color{24, 24, 28, 45});
-    drawTouchButton(dpadX, dpadY - dpadRadius * 0.62f, dpadRadius * 0.34f, "▲", PAD_UP, pressed);
-    drawTouchButton(dpadX, dpadY + dpadRadius * 0.62f, dpadRadius * 0.34f, "▼", PAD_DOWN, pressed);
-    drawTouchButton(dpadX - dpadRadius * 0.62f, dpadY, dpadRadius * 0.34f, "◀", PAD_LEFT, pressed);
-    drawTouchButton(dpadX + dpadRadius * 0.62f, dpadY, dpadRadius * 0.34f, "▶", PAD_RIGHT, pressed);
+    drawTouchButton(dpadX, dpadY - dpadRadius * 0.62f, dpadRadius * 0.34f, "U", PAD_UP, pressed);
+    drawTouchButton(dpadX, dpadY + dpadRadius * 0.62f, dpadRadius * 0.34f, "D", PAD_DOWN, pressed);
+    drawTouchButton(dpadX - dpadRadius * 0.62f, dpadY, dpadRadius * 0.34f, "L", PAD_LEFT, pressed);
+    drawTouchButton(dpadX + dpadRadius * 0.62f, dpadY, dpadRadius * 0.34f, "R", PAD_RIGHT, pressed);
 
-    drawTouchButton(faceX, faceY - faceRadius * 1.25f, faceRadius, "△", PAD_TRIANGLE, pressed);
-    drawTouchButton(faceX + faceRadius * 1.25f, faceY, faceRadius, "○", PAD_CIRCLE, pressed);
+    drawTouchButton(faceX, faceY - faceRadius * 1.25f, faceRadius, "T", PAD_TRIANGLE, pressed);
+    drawTouchButton(faceX + faceRadius * 1.25f, faceY, faceRadius, "O", PAD_CIRCLE, pressed);
     drawTouchButton(faceX, faceY + faceRadius * 1.25f, faceRadius, "X", PAD_CROSS, pressed);
-    drawTouchButton(faceX - faceRadius * 1.25f, faceY, faceRadius, "□", PAD_SQUARE, pressed);
+    drawTouchButton(faceX - faceRadius * 1.25f, faceY, faceRadius, "S", PAD_SQUARE, pressed);
 
     drawTouchButton(width * 0.15f, height * 0.14f, shoulderRadius, "L1", PAD_L1, pressed);
     drawTouchButton(width * 0.30f, height * 0.14f, shoulderRadius, "L2", PAD_L2, pressed);
