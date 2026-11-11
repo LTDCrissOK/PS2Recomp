@@ -10,7 +10,6 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VITASDK})
 endif()
 
 project(PS2RetroX)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(PS2X_BUILD_RECOMP "Build ps2xRecomp" ON)
@@ -43,38 +42,21 @@ endif()
 
 if(PS2X_IS_ARM_TARGET)
     message(STATUS "ARM target detected, fetching sse2neon")
-
     include(FetchContent)
-    FetchContent_Declare(
-        sse2neon
+    FetchContent_Declare(sse2neon
         GIT_REPOSITORY https://github.com/DLTcollab/sse2neon.git
         GIT_TAG v1.9.1
-        GIT_SHALLOW TRUE
-    )
+        GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(sse2neon)
-
     include_directories(${sse2neon_SOURCE_DIR})
     add_compile_definitions(USE_SSE2NEON)
 
-    if(PS2X_IS_AARCH64_TARGET AND APPLE)
-        # macOS ARM64 already uses optimal defaults
-        message(STATUS "macOS ARM64 - using default compiler flags")
-    elseif(PS2X_IS_AARCH64_TARGET AND MSVC)
-        # Windows ARM64 - MSVC already uses optimal defaults
-        message(STATUS "Windows ARM64 (MSVC) - using default compiler flags")
-    elseif(PS2X_IS_AARCH64_TARGET)
-        # Linux ARM64 - add NEON flags
-        message(STATUS "Non-Apple ARM64 - adding NEON compiler flags")
+    if(PS2X_IS_AARCH64_TARGET AND NOT APPLE AND NOT MSVC)
         add_compile_options(-march=armv8-a+fp+simd)
-
-        # Try to enable crypto and CRC extensions if supported
         include(CheckCXXCompilerFlag)
         check_cxx_compiler_flag("-march=armv8-a+fp+simd+crypto+crc" COMPILER_SUPPORTS_CRYPTO_CRC)
         if(COMPILER_SUPPORTS_CRYPTO_CRC)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+fp+simd+crypto+crc")
-            message(STATUS "Crypto and CRC extensions enabled")
-        else()
-            add_compile_options(-march=armv8-a+fp+simd)
         endif()
     endif()
 endif()
@@ -88,14 +70,26 @@ if(PS2X_BUILD_RUNTIME)
     add_subdirectory("ps2xRuntime")
 endif()
 
+# Android GLES 3.0 platform layer from the companion GSdx repository.
+# This currently supplies EGL/GLES context creation only; the GS renderer
+# and GSRasterBackend adapter are separate implementation work.
+if(ANDROID AND PS2X_BUILD_RUNTIME)
+    include(FetchContent)
+    FetchContent_Declare(gsdx_android_gles30
+        GIT_REPOSITORY https://github.com/LTDCrissOK/GSdx-Android-GLES30.git
+        GIT_TAG android/gles30-gsraster-backend
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR android/gsdx-gles30)
+    FetchContent_MakeAvailable(gsdx_android_gles30)
+    target_link_libraries(ps2EntryRunner PRIVATE gsdx_gles30)
+endif()
+
 if(PS2X_BUILD_ANALYZER)
     add_subdirectory("ps2xAnalyzer")
 endif()
-
 if(PS2X_BUILD_TEST)
     add_subdirectory("ps2xTest")
 endif()
-
 if(PS2X_BUILD_STUDIO)
     add_subdirectory("ps2xStudio")
 endif()

@@ -1,0 +1,70 @@
+name: Android APK (ARM32 + ARM64)
+
+on:
+  push:
+    branches:
+      - android/gsdx-gles30-foundation
+    paths:
+      - 'android/**'
+      - 'ps2xRuntime/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - 'ps2xRuntime/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    name: Build Android armeabi-v7a + arm64-v8a APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 cmake;3.22.1 ndk;28.2.13676358'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK (ARM32 + ARM64)
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Verify APK output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='android/app/build/outputs/apk/release/app-release.apk'
+          test -s "$APK"
+          $ANDROID_HOME/build-tools/34.0.0/aapt dump badging "$APK" | grep -E "native-code:.*(armeabi-v7a|arm64-v8a)"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: PS2Recomp-Android-ARM32-ARM64
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14

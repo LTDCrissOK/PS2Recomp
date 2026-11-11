@@ -238,8 +238,14 @@ else()
     target_link_libraries(ps2_host_backend INTERFACE raylib)
 
     if(PS2X_IS_ANDROID)
-        target_link_libraries(ps2_host_backend INTERFACE log android)
-    endif()
+    target_link_libraries(ps2_host_backend INTERFACE
+        log
+        android
+        EGL
+        GLESv3
+    )
+endif()
+
 endif()
 
 if(PS2X_IS_ANDROID)
