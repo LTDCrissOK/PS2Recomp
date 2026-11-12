@@ -91,7 +91,7 @@ else()
         # raylib 5.5 selects the ES3 EGL config when built for ES 3.0, but its
         # Android backend still requests a client-version-2 context. Align the
         # context request with the selected ES3 shader/API configuration.
-        set(PS2X_RAYLIB_ANDROID_SOURCE "${raylib_SOURCE_DIR}/platforms/rcore_android.c")
+        set(PS2X_RAYLIB_ANDROID_SOURCE "${raylib_SOURCE_DIR}/src/platforms/rcore_android.c")
         if(NOT EXISTS "${PS2X_RAYLIB_ANDROID_SOURCE}")
             message(FATAL_ERROR "raylib Android platform source was not found: ${PS2X_RAYLIB_ANDROID_SOURCE}")
         endif()
