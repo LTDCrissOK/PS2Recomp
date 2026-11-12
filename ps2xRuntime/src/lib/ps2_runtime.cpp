@@ -1,6 +1,7 @@
 #include "ps2_runtime.h"
 #if defined(__ANDROID__)
 #include "runtime/ps2_android_runtime.h"
+#include "runtime/android_video_output.h"
 #endif
 #include "ps2_log.h"
 #include "ps2_stubs.h"
@@ -411,8 +412,23 @@ namespace
     }
 }
 
-static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight)
+static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight
+#if defined(__ANDROID__)
+                       , AndroidVideoOutput *androidVideoOutput
+#endif
+)
 {
+    const auto uploadPixels = [&](const void *pixels)
+    {
+#if defined(__ANDROID__)
+        if (androidVideoOutput != nullptr &&
+            androidVideoOutput->uploadRgba8888(static_cast<const uint8_t *>(pixels), FB_WIDTH, FB_HEIGHT))
+        {
+            return;
+        }
+#endif
+        UpdateTexture(tex, pixels);
+    };
     static uint64_t s_lastPresentationTick = std::numeric_limits<uint64_t>::max();
     static bool s_hasLatchedInitialFrame = false;
     static uint32_t s_lastDisplayFbp = std::numeric_limits<uint32_t>::max();
@@ -453,7 +469,7 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
                                                    &usedPreferredDisplaySource))
     {
         Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, MAGENTA);
-        UpdateTexture(tex, blank.data);
+        uploadPixels(blank.data);
         UnloadImage(blank);
         outWidth = FB_WIDTH;
         outHeight = DEFAULT_DISPLAY_HEIGHT;
@@ -542,7 +558,7 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
         ++s_frameStatsLogCount;
     });
 
-    UpdateTexture(tex, s_uploadBuffer.data());
+    uploadPixels(s_uploadBuffer.data());
     outWidth = width;
     outHeight = height;
     s_hasUploadedFrame = true;
@@ -2660,6 +2676,18 @@ void PS2Runtime::run()
     Texture2D frameTex = LoadTextureFromImage(blank);
     UnloadImage(blank);
 
+#if defined(__ANDROID__)
+    // raylib's NativeActivity backend already owns ANativeWindow and EGL.
+    // Attach the GLES3 presenter to that active context instead of creating a
+    // competing EGL surface/context for the same Android window.
+    AndroidVideoOutput androidVideoOutput;
+    const bool androidVideoReady = androidVideoOutput.initialize();
+    if (!androidVideoReady)
+    {
+        RUNTIME_LOG("[video] GLES3 presenter unavailable; retaining raylib texture output.");
+    }
+#endif
+
     std::atomic<bool> gameThreadFinished{false};
 
     std::thread gameThread([&]()
@@ -2726,7 +2754,11 @@ void PS2Runtime::run()
         });
         uint32_t presentWidth = FB_WIDTH;
         uint32_t presentHeight = DEFAULT_DISPLAY_HEIGHT;
+#if defined(__ANDROID__)
+        UploadFrame(frameTex, this, presentWidth, presentHeight, &androidVideoOutput);
+#else
         UploadFrame(frameTex, this, presentWidth, presentHeight);
+#endif
         if ((tick % 120u) == 0u)
         {
             const uint64_t curDma = m_memory.dmaStartCount();
@@ -2778,7 +2810,16 @@ void PS2Runtime::run()
             (screenHeight - dstHeight) * 0.5f,
             dstWidth,
             dstHeight};
+#if defined(__ANDROID__)
+        if (!androidVideoOutput.draw(presentWidth, presentHeight,
+                                    static_cast<uint32_t>(std::max(0.0f, screenWidth)),
+                                    static_cast<uint32_t>(std::max(0.0f, screenHeight))))
+        {
+            DrawTexturePro(frameTex, srcRect, dstRect, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+        }
+#else
         DrawTexturePro(frameTex, srcRect, dstRect, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+#endif
 #if defined(__ANDROID__)
         ps2AndroidDrawTouchControls();
 #endif
@@ -2807,6 +2848,9 @@ void PS2Runtime::run()
         m_debugUiShutdownCallback(*this, m_debugUiUserData);
         m_debugUiInitialized = false;
     }
+#if defined(__ANDROID__)
+    androidVideoOutput.shutdown();
+#endif
     UnloadTexture(frameTex);
     CloseWindow();
 
