@@ -550,6 +550,7 @@ target_link_libraries(ps2_runtime PUBLIC ps2_host_backend ffmpeg ps2_iop)
 if(PS2X_IS_ANDROID)
     target_sources(ps2_runtime PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/lib/android_video_output.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/lib/gs/android_gs_hw_context.cpp"
     )
     target_include_directories(ps2_runtime PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/include"
