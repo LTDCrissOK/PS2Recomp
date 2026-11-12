@@ -73,6 +73,10 @@ else()
 
     if(PS2X_IS_ANDROID)
         set(PLATFORM "Android" CACHE STRING "" FORCE)
+        option(PS2X_ANDROID_USE_GLES3 "Use an OpenGL ES 3.0 context for Android presentation" ON)
+        if(PS2X_ANDROID_USE_GLES3)
+            set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
+        endif()
     endif()
 
     FetchContent_Declare(
@@ -82,6 +86,25 @@ else()
         GIT_PROGRESS TRUE
     )
     FetchContent_MakeAvailable(raylib)
+
+    if(PS2X_IS_ANDROID AND PS2X_ANDROID_USE_GLES3)
+        # raylib 5.5 selects the ES3 EGL config when built for ES 3.0, but its
+        # Android backend still requests a client-version-2 context. Align the
+        # context request with the selected ES3 shader/API configuration.
+        set(PS2X_RAYLIB_ANDROID_SOURCE "${raylib_SOURCE_DIR}/platforms/rcore_android.c")
+        if(NOT EXISTS "${PS2X_RAYLIB_ANDROID_SOURCE}")
+            message(FATAL_ERROR "raylib Android platform source was not found: ${PS2X_RAYLIB_ANDROID_SOURCE}")
+        endif()
+        file(READ "${PS2X_RAYLIB_ANDROID_SOURCE}" PS2X_RAYLIB_ANDROID_CONTENT)
+        string(FIND "${PS2X_RAYLIB_ANDROID_CONTENT}" "EGL_CONTEXT_CLIENT_VERSION, 2," PS2X_RAYLIB_ES2_CONTEXT_POSITION)
+        if(PS2X_RAYLIB_ES2_CONTEXT_POSITION EQUAL -1)
+            message(FATAL_ERROR "raylib Android EGL context version anchor changed; review the GLES3 patch before building.")
+        endif()
+        string(REPLACE "EGL_CONTEXT_CLIENT_VERSION, 2," "EGL_CONTEXT_CLIENT_VERSION, 3,"
+            PS2X_RAYLIB_ANDROID_CONTENT "${PS2X_RAYLIB_ANDROID_CONTENT}")
+        file(WRITE "${PS2X_RAYLIB_ANDROID_SOURCE}" "${PS2X_RAYLIB_ANDROID_CONTENT}")
+        message(STATUS "Manhunt 2 Android: raylib NativeActivity now requests an OpenGL ES 3.0 EGL context.")
+    endif()
 
     if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_ANDROID)
         FetchContent_Declare(
@@ -508,6 +531,18 @@ target_include_directories(ps2_runtime PUBLIC
 )
 
 target_link_libraries(ps2_runtime PUBLIC ps2_host_backend ffmpeg ps2_iop)
+
+if(PS2X_IS_ANDROID)
+    target_sources(ps2_runtime PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/lib/android_video_output.cpp"
+    )
+    target_include_directories(ps2_runtime PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/include"
+    )
+    if(PS2X_ANDROID_USE_GLES3)
+        target_link_libraries(ps2_runtime PUBLIC EGL GLESv3)
+    endif()
+endif()
 target_link_libraries(ps2EntryRunner
     PRIVATE
     ps2_runtime
