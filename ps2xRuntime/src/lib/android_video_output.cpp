@@ -5,6 +5,7 @@
 #include <android/log.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -271,7 +272,24 @@ bool AndroidVideoOutput::createResources()
 
 bool AndroidVideoOutput::initialize()
 {
-    return bindCurrentContext();
+    if (!bindCurrentContext())
+    {
+        logError("GLES3 presenter initialization failed: no valid current EGL/GLES3 context.");
+        return false;
+    }
+
+    const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+    const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    const char *vendor = reinterpret_cast<const char *>(glGetString(GL_VENDOR));
+    const char *eglVersion = eglQueryString(m_display, EGL_VERSION);
+    __android_log_print(ANDROID_LOG_INFO, kLogTag,
+                        "GPU_CONTEXT egl=%s gl=%s vendor=%s renderer=%s",
+                        eglVersion ? eglVersion : "(unknown)",
+                        version ? version : "(unknown)",
+                        vendor ? vendor : "(unknown)",
+                        renderer ? renderer : "(unknown)");
+    logInfo("GLES3 presenter initialized on raylib NativeActivity context.");
+    return true;
 }
 
 bool AndroidVideoOutput::uploadRgba8888(const uint8_t *pixels,
@@ -320,12 +338,20 @@ bool AndroidVideoOutput::uploadRgba8888(const uint8_t *pixels,
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
     glActiveTexture(static_cast<GLenum>(previousActiveTexture));
 
+    static std::atomic<uint32_t> s_uploadCount{0u};
+    const uint32_t uploadCount = s_uploadCount.fetch_add(1u, std::memory_order_relaxed);
     if (error != GL_NO_ERROR)
     {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
-                            "Frame texture upload failed (GL error 0x%04x).",
-                            static_cast<unsigned int>(error));
+                            "FRAME_UPLOAD_FAIL count=%u size=%ux%u gl_error=0x%04x",
+                            uploadCount, width, height, static_cast<unsigned int>(error));
         return false;
+    }
+    if (uploadCount < 8u || (uploadCount % 120u) == 0u)
+    {
+        __android_log_print(ANDROID_LOG_INFO, kLogTag,
+                            "FRAME_UPLOAD_OK count=%u size=%ux%u texture=%u",
+                            uploadCount, width, height, m_texture);
     }
 
     return true;
@@ -401,13 +427,22 @@ bool AndroidVideoOutput::draw(uint32_t contentWidth,
     restoreCapability(GL_CULL_FACE, previousCull);
     restoreCapability(GL_SCISSOR_TEST, previousScissor);
 
+    static std::atomic<uint32_t> s_drawCount{0u};
+    const uint32_t drawCount = s_drawCount.fetch_add(1u, std::memory_order_relaxed);
     const GLenum error = glGetError();
     if (error != GL_NO_ERROR)
     {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag,
-                            "GS frame presentation failed (GL error 0x%04x).",
+                            "FRAME_DRAW_FAIL count=%u content=%ux%u viewport=%ux%u gl_error=0x%04x",
+                            drawCount, contentWidth, contentHeight, viewportWidth, viewportHeight,
                             static_cast<unsigned int>(error));
         return false;
+    }
+    if (drawCount < 8u || (drawCount % 120u) == 0u)
+    {
+        __android_log_print(ANDROID_LOG_INFO, kLogTag,
+                            "FRAME_DRAW_OK count=%u content=%ux%u viewport=%ux%u texture=%u",
+                            drawCount, contentWidth, contentHeight, viewportWidth, viewportHeight, m_texture);
     }
 
     return true;
