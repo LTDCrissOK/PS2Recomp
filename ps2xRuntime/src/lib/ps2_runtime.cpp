@@ -421,11 +421,24 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
     const auto uploadPixels = [&](const void *pixels)
     {
 #if defined(__ANDROID__)
-        if (androidVideoOutput != nullptr &&
-            androidVideoOutput->uploadRgba8888(static_cast<const uint8_t *>(pixels), FB_WIDTH, FB_HEIGHT))
+        // Keep raylib's texture synchronized even when GLES3 upload succeeds.
+        // It is the recovery path if the EGL context/surface is lost between
+        // upload and draw (pause/resume, Activity surface recreation).
+        UpdateTexture(tex, pixels);
+        if (androidVideoOutput != nullptr)
         {
-            return;
+            static uint32_t s_androidUploadAttempts = 0u;
+            const bool uploaded = androidVideoOutput->uploadRgba8888(
+                static_cast<const uint8_t *>(pixels), FB_WIDTH, FB_HEIGHT);
+            if (s_androidUploadAttempts < 8u || (s_androidUploadAttempts % 120u) == 0u)
+            {
+                RUNTIME_LOG("[video] frame_upload attempt=" << s_androidUploadAttempts
+                            << " gles3=" << (uploaded ? "ok" : "fallback")
+                            << " size=" << FB_WIDTH << "x" << FB_HEIGHT);
+            }
+            ++s_androidUploadAttempts;
         }
+        return;
 #endif
         UpdateTexture(tex, pixels);
     };
