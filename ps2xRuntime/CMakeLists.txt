@@ -104,6 +104,21 @@ else()
             PS2X_RAYLIB_ANDROID_CONTENT "${PS2X_RAYLIB_ANDROID_CONTENT}")
         file(WRITE "${PS2X_RAYLIB_ANDROID_SOURCE}" "${PS2X_RAYLIB_ANDROID_CONTENT}")
         message(STATUS "Manhunt 2 Android: raylib NativeActivity now requests an OpenGL ES 3.0 EGL context.")
+
+        # raylib 5.5 calls the EXT symbol, but Android GLESv3 exports the ES3 core symbol.
+        set(PS2X_RAYLIB_RLGL_SOURCE "${raylib_SOURCE_DIR}/src/rlgl.h")
+        if(NOT EXISTS "${PS2X_RAYLIB_RLGL_SOURCE}")
+            message(FATAL_ERROR "raylib rlgl source was not found: ${PS2X_RAYLIB_RLGL_SOURCE}")
+        endif()
+        file(READ "${PS2X_RAYLIB_RLGL_SOURCE}" PS2X_RAYLIB_RLGL_CONTENT)
+        string(FIND "${PS2X_RAYLIB_RLGL_CONTENT}" "glDrawBuffersEXT(count, buffers);" PS2X_RAYLIB_DRAW_BUFFERS_POSITION)
+        if(PS2X_RAYLIB_DRAW_BUFFERS_POSITION EQUAL -1)
+            message(FATAL_ERROR "raylib ES3 draw-buffers anchor changed; review the Android GLES3 patch.")
+        endif()
+        string(REPLACE "glDrawBuffersEXT(count, buffers);" "glDrawBuffers(count, buffers);"
+            PS2X_RAYLIB_RLGL_CONTENT "${PS2X_RAYLIB_RLGL_CONTENT}")
+        file(WRITE "${PS2X_RAYLIB_RLGL_SOURCE}" "${PS2X_RAYLIB_RLGL_CONTENT}")
+        message(STATUS "Manhunt 2 Android: raylib ES3 draw-buffers call uses the GLESv3 core symbol.")
     endif()
 
     if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_ANDROID)
