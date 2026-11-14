@@ -435,6 +435,11 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
                 RUNTIME_LOG("[video] frame_upload attempt=" << s_androidUploadAttempts
                             << " gles3=" << (uploaded ? "ok" : "fallback")
                             << " size=" << FB_WIDTH << "x" << FB_HEIGHT);
+                std::ostringstream diagnostic;
+                diagnostic << "ANDROID_GLES_UPLOAD attempt=" << s_androidUploadAttempts
+                           << " result=" << (uploaded ? "ok" : "fallback")
+                           << " width=" << FB_WIDTH << " height=" << FB_HEIGHT;
+                writePersistentDiagnostic(diagnostic.str());
             }
             ++s_androidUploadAttempts;
         }
@@ -481,6 +486,15 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
                                                    &sourceFbp,
                                                    &usedPreferredDisplaySource))
     {
+        static uint32_t s_unavailableFrameCount = 0u;
+        if (s_unavailableFrameCount < 8u || (s_unavailableFrameCount % 120u) == 0u)
+        {
+            std::ostringstream diagnostic;
+            diagnostic << "GS_FRAME_UNAVAILABLE tick=" << currentTick
+                       << " count=" << s_unavailableFrameCount;
+            writePersistentDiagnostic(diagnostic.str());
+        }
+        ++s_unavailableFrameCount;
         Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, MAGENTA);
         uploadPixels(blank.data);
         UnloadImage(blank);
@@ -537,6 +551,34 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
             std::memcpy(s_uploadBuffer.data() + dstOffset, s_scratch.data() + srcOffset, copyRowBytes);
         }
     }
+
+    static uint32_t s_persistentFrameStatsCount = 0u;
+    if (s_persistentFrameStatsCount < 8u || (s_persistentFrameStatsCount % 120u) == 0u)
+    {
+        uint64_t nonBlackPixels = 0u;
+        uint64_t rgbSum = 0u;
+        for (size_t i = 0u; i + 3u < s_uploadBuffer.size(); i += 4u)
+        {
+            const uint8_t r = s_uploadBuffer[i + 0u];
+            const uint8_t g = s_uploadBuffer[i + 1u];
+            const uint8_t b = s_uploadBuffer[i + 2u];
+            if (r != 0u || g != 0u || b != 0u)
+                ++nonBlackPixels;
+            rgbSum += static_cast<uint64_t>(r) + static_cast<uint64_t>(g) + static_cast<uint64_t>(b);
+        }
+        std::ostringstream diagnostic;
+        diagnostic << "GS_FRAME_STATS tick=" << currentTick
+                   << " count=" << s_persistentFrameStatsCount
+                   << " size=" << width << "x" << height
+                   << " scratch_bytes=" << s_scratch.size()
+                   << " display_fbp=" << displayFbp
+                   << " source_fbp=" << sourceFbp
+                   << " preferred=" << (usedPreferredDisplaySource ? 1 : 0)
+                   << " non_black_pixels=" << nonBlackPixels
+                   << " rgb_sum=" << rgbSum;
+        writePersistentDiagnostic(diagnostic.str());
+    }
+    ++s_persistentFrameStatsCount;
 
     PS2_IF_AGRESSIVE_LOGS({
         static uint32_t s_frameStatsLogCount = 0u;
@@ -835,6 +877,8 @@ bool PS2Runtime::initialize(const char *title)
         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
         InitAudioDevice();
         m_audioBackend.setAudioReady(IsAudioDeviceReady());
+        writePersistentDiagnostic(std::string("ANDROID_AUDIO_DEVICE ready=")
+                                  + (IsAudioDeviceReady() ? "true" : "false"));
 #endif
         SetTargetFPS(60);
         if (m_debugUiInitCallback)
